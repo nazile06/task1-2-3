@@ -1,0 +1,585 @@
+{
+  "info": {
+    "name": "Feign Resilience Microservices",
+    "description": "Part 1, Part 2 and Task 3 (retry, error propagation, circuit breaker). Run folders in order with the Collection Runner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081"
+    },
+    {
+      "key": "itemId",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Part 1 - Feign communication",
+      "description": "",
+      "item": [
+        {
+          "name": "Hello via Feign",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hello",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "hello"
+              ]
+            },
+            "description": "client-service calls storage-service through the Feign client."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response comes from storage-service\", () => pm.expect(pm.response.json().service).to.eql(\"storage-service\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Part 2 - PostgreSQL",
+      "description": "",
+      "item": [
+        {
+          "name": "Create item (processed and stored)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "description": "client-service processes the data, passes it to storage-service, which saves it in PostgreSQL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"   laptop   pro \",\n  \"description\": \"Developer laptop\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Name was trimmed and uppercased by client-service\", () => pm.expect(b.name).to.eql(\"LAPTOP PRO\"));",
+                  "pm.test(\"Item has a database id\", () => pm.expect(b.id).to.be.a(\"number\"));",
+                  "pm.collectionVariables.set(\"itemId\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get all items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response is an array\", () => pm.expect(pm.response.json()).to.be.an(\"array\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get item by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/items/{{itemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "items",
+                "{{itemId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Id matches\", () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get(\"itemId\"))));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Task 3 - Error propagation",
+      "description": "",
+      "item": [
+        {
+          "name": "404 propagated from storage-service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/items/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "items",
+                "999999"
+              ]
+            },
+            "description": "Client errors (4xx) are propagated as is and are NOT retried."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Message and source are propagated\", () => { pm.expect(b.message).to.include(\"not found\"); pm.expect(b.source).to.eql(\"storage-service\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "400 validation error (blank name)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "items"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"   \",\n  \"description\": \"invalid\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation message returned\", () => pm.expect(pm.response.json().message).to.include(\"name\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "500 propagated after retries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/error",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "error"
+              ]
+            },
+            "description": "Server errors (5xx) are retried 3 times, then propagated. Check client-service logs for 3 attempts."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 500\", () => pm.response.to.have.status(500));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Original storage-service message propagated\", () => { pm.expect(b.message).to.include(\"Simulated\"); pm.expect(b.source).to.eql(\"storage-service\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Task 3 - Retry",
+      "description": "",
+      "item": [
+        {
+          "name": "Reset flaky counter",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "reset"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Flaky: succeeds on 3rd attempt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/flaky?failures=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "flaky"
+              ],
+              "query": [
+                {
+                  "key": "failures",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "storage-service fails twice, the third attempt succeeds: retry hides the failures from the caller."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Succeeded after 2 failures\", () => pm.expect(pm.response.json().message).to.include(\"2 simulated failures\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Flaky: retries exhausted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/flaky?failures=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "flaky"
+              ],
+              "query": [
+                {
+                  "key": "failures",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Fails on all 3 attempts, so the error is propagated."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 500\", () => pm.response.to.have.status(500));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset flaky counter (cleanup)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "reset"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Timeout: read timeout triggers retries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/slow?ms=5000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "slow"
+              ],
+              "query": [
+                {
+                  "key": "ms",
+                  "value": "5000"
+                }
+              ]
+            },
+            "description": "Feign read timeout is 2s. Takes around 7 seconds because of 3 attempts with exponential backoff."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 503\", () => pm.response.to.have.status(503));",
+                  "pm.test(\"Unreachable message\", () => pm.expect(pm.response.json().message).to.include(\"unreachable or timed out\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Task 3 - Circuit breaker",
+      "description": "",
+      "item": [
+        {
+          "name": "1. Circuit breaker state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/circuit-breaker/state",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "circuit-breaker",
+                "state"
+              ]
+            },
+            "description": "Run before and after the failing calls to watch CLOSED -> OPEN -> HALF_OPEN -> CLOSED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"State is reported\", () => pm.expect([\"CLOSED\",\"OPEN\",\"HALF_OPEN\"]).to.include(pm.response.json().state));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Trip the breaker (run 3+ times)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/test/error",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "test",
+                "error"
+              ]
+            },
+            "description": "Each request makes 3 attempts. After 5 recorded failures the breaker opens, later calls return 503 immediately."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is one of [500, 503]\", () => pm.expect([500, 503]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Call while OPEN (fast fail)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hello",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "hello"
+              ]
+            },
+            "description": "While the circuit is OPEN this returns 503 immediately. After 15 seconds it moves to HALF_OPEN and healthy calls close it again."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is one of [200, 503]\", () => pm.expect([200, 503]).to.include(pm.response.code));",
+                  "if (pm.response.code === 503) { pm.test(\"Fast-fail message\", () => pm.expect(pm.response.json().message).to.include(\"Circuit breaker is OPEN\")); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Recovery check (run 3+ times after 15s)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hello",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "hello"
+              ]
+            },
+            "description": "Wait 15 seconds after the circuit opened, then run this 3 times: 3 successful trial calls close the circuit."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

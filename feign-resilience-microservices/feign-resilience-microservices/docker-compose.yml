@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: storage-postgres
+    environment:
+      POSTGRES_DB: storagedb
+      POSTGRES_USER: storage
+      POSTGRES_PASSWORD: storage
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storage -d storagedb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  storage-service:
+    build: ./storage-service
+    container_name: storage-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/storagedb
+      SPRING_DATASOURCE_USERNAME: storage
+      SPRING_DATASOURCE_PASSWORD: storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  client-service:
+    build: ./client-service
+    container_name: client-service
+    ports:
+      - "8081:8081"
+    environment:
+      STORAGE_SERVICE_URL: http://storage-service:8082
+    depends_on:
+      - storage-service
+
+volumes:
+  pgdata:
